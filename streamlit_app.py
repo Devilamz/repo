@@ -241,10 +241,21 @@ elif page == "Delivery Rounds":
         
         if rounds:
             df = pd.DataFrame(rounds)
+
+            def _format_round(option_id):
+                row = df[df['id'] == option_id]
+                if row.empty:
+                    return str(option_id)
+                name = row['round_name'].values[0] if 'round_name' in df.columns else str(option_id)
+                # database returns 'delivery_date' column
+                date_col = 'delivery_date' if 'delivery_date' in df.columns else None
+                date = row[date_col].values[0] if date_col else ''
+                return f"{name} ({date})" if date else f"{name}"
+
             round_to_delete = st.selectbox(
                 "Select Round to Delete",
                 df["id"].tolist(),
-                format_func=lambda x: f"{df[df['id']==x]['round_name'].values[0]} ({df[df['id']==x]['round_date'].values[0]})"
+                format_func=_format_round
             )
             
             if st.button("🗑️ Delete Round", key="delete_round"):
