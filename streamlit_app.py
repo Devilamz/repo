@@ -42,22 +42,18 @@ def calculate_columns(df: pd.DataFrame) -> pd.DataFrame:
     
     try:
         # Calculate Total Received (sum of all receive rounds)
-        df["Total_Received"] = (
-            df["Receive_Round_1"].fillna(0) + 
-            df["Receive_Round_2"].fillna(0) + 
-            df["Receive_Round_3"].fillna(0)
-        )
+        receive_cols = [col for col in ['Receive_Round_1', 'Receive_Round_2', 'Receive_Round_3'] if col in df.columns]
+        if receive_cols:
+            df["Total_Received"] = df[receive_cols].fillna(0).sum(axis=1)
+        else:
+            df["Total_Received"] = 0
         
-        # Calculate Total Distributed (sum of all shops)
-        df["Total_Distributed_Big"] = (
-            df["Shop_1"].fillna(0) + 
-            df["Shop_2"].fillna(0) + 
-            df["Shop_3"].fillna(0) + 
-            df["Shop_4"].fillna(0) + 
-            df["Shop_5"].fillna(0) + 
-            df["Shop_6"].fillna(0) + 
-            df["Shop_7"].fillna(0)
-        )
+        # Calculate Total Distributed (sum of all shops that exist in the dataframe)
+        shop_cols = [col for col in df.columns if col.startswith('Shop_')]
+        if shop_cols:
+            df["Total_Distributed_Big"] = df[shop_cols].fillna(0).sum(axis=1)
+        else:
+            df["Total_Distributed_Big"] = 0
         
         # Calculate Remaining (Stock left after distribution)
         df["Remaining"] = df["Total_Received"].fillna(0) - df["Total_Distributed_Big"].fillna(0)
