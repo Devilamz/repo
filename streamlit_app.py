@@ -184,10 +184,18 @@ elif page == "Products":
         
         if products:
             df = pd.DataFrame(products)
+
+            def _format_product(option_code):
+                row = df[df['Code'] == option_code]
+                if row.empty:
+                    return str(option_code)
+                name = row['Product_Name'].values[0] if 'Product_Name' in df.columns else ''
+                return f"{option_code} - {name}" if name else str(option_code)
+
             product_to_delete = st.selectbox(
                 "Select Product to Delete",
                 df["Code"].tolist(),
-                format_func=lambda x: f"{x} - {df[df['Code']==x]['Product_Name'].values[0]}"
+                format_func=_format_product
             )
             
             if st.button("🗑️ Delete Product", key="delete_product"):
@@ -381,10 +389,21 @@ elif page == "Shop Management":
         
         if shops:
             df = pd.DataFrame(shops)
+
+            def _format_shop(option_id):
+                row = df[df['id'] == option_id]
+                if row.empty:
+                    return str(option_id)
+                code = row['shop_code'].values[0] if 'shop_code' in df.columns else ''
+                name = row['shop_name'].values[0] if 'shop_name' in df.columns else ''
+                if code and name:
+                    return f"{code} - {name}"
+                return code or name or str(option_id)
+
             shop_to_edit = st.selectbox(
                 "Select Shop to Edit",
                 df["id"].tolist(),
-                format_func=lambda x: f"{df[df['id']==x]['shop_code'].values[0]} - {df[df['id']==x]['shop_name'].values[0]}"
+                format_func=_format_shop
             )
             
             shop_data = df[df["id"] == shop_to_edit].iloc[0]
@@ -408,10 +427,21 @@ elif page == "Shop Management":
         
         if shops:
             df = pd.DataFrame(shops)
+
+            def _format_shop_delete(option_id):
+                row = df[df['id'] == option_id]
+                if row.empty:
+                    return str(option_id)
+                code = row['shop_code'].values[0] if 'shop_code' in df.columns else ''
+                name = row['shop_name'].values[0] if 'shop_name' in df.columns else ''
+                if code and name:
+                    return f"{code} - {name}"
+                return code or name or str(option_id)
+
             shop_to_delete = st.selectbox(
                 "Select Shop to Delete",
                 df["id"].tolist(),
-                format_func=lambda x: f"{df[df['id']==x]['shop_code'].values[0]} - {df[df['id']==x]['shop_name'].values[0]}",
+                format_func=_format_shop_delete,
                 key="delete_shop_select"
             )
             
