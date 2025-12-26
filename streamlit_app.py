@@ -72,17 +72,17 @@ st.title("📦 Inventory Manager")
 st.markdown("---")
 
 # Sidebar Navigation
-page = st.sidebar.radio(
-    "📋 Navigation",
-    ["Dashboard", "Products", "Delivery Rounds", "Inventory by Round", "Shop Management", "Shop Distribution"]
+    page = st.sidebar.radio(
+    "📋 เมนู",
+    ["แดชบอร์ด", "สินค้า", "รอบการรับ", "สินค้าตามรอบ", "จัดการร้าน", "การแจกจ่ายร้าน"]
 )
 
 
 # ============================================================================
 # DASHBOARD PAGE
 # ============================================================================
-if page == "Dashboard":
-    st.header("Dashboard")
+if page == "แดชบอร์ด":
+    st.header("แดชบอร์ด")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -99,23 +99,23 @@ if page == "Dashboard":
         col4.metric("📊 Stock Remaining", int(df["Remaining"].sum()))
         
         st.markdown("---")
-        st.subheader("📊 Products Overview")
+        st.subheader("📊 สรุปสินค้า")
         st.dataframe(df, use_container_width=True, hide_index=True)
     else:
-        st.info("No products found. Start by adding products in the 'Products' section.")
+        st.info("ยังไม่มีสินค้า เริ่มได้โดยไปที่เมนู 'สินค้า' เพื่อเพิ่มสินค้า")
 
 
 # ============================================================================
 # PRODUCTS PAGE
 # ============================================================================
-elif page == "Products":
-    st.header("Product Management")
+elif page == "สินค้า":
+    st.header("จัดการสินค้า")
     
-    tabs = st.tabs(["View Products", "Add Product", "Edit Products", "Delete Product"])
+    tabs = st.tabs(["ดูสินค้า", "เพิ่มสินค้า", "แก้ไขสินค้า", "ลบสินค้า"])
     
     # Tab 1: View Products
     with tabs[0]:
-        st.subheader("All Products")
+        st.subheader("สินค้าทั้งหมด")
         products = get_all_products()
         
         if products:
@@ -126,7 +126,7 @@ elif page == "Products":
             # Download button
             csv = df.to_csv(index=False)
             st.download_button(
-                label="📥 Download as CSV",
+                label="📥 ดาวน์โหลดเป็น CSV",
                 data=csv,
                 file_name="products.csv",
                 mime="text/csv"
@@ -136,24 +136,24 @@ elif page == "Products":
     
     # Tab 2: Add Product
     with tabs[1]:
-        st.subheader("Add New Product")
+        st.subheader("เพิ่มสินค้าใหม่")
         col1, col2 = st.columns(2)
         
         with col1:
-            product_code = st.text_input("Product Code")
-            product_name = st.text_input("Product Name")
+            product_code = st.text_input("รหัสสินค้า")
+            product_name = st.text_input("ชื่อสินค้า")
         
-        if st.button("➕ Add Product", key="add_product"):
+        if st.button("➕ เพิ่มสินค้า", key="add_product"):
             if product_code and product_name:
                 add_product(product_code, product_name)
-                st.success(f"✅ Product '{product_name}' added successfully!")
+                st.success(f"✅ เพิ่มสินค้า '{product_name}' เรียบร้อยแล้ว")
                 st.rerun()
             else:
-                st.error("Please fill in all fields.")
+                st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
     
     # Tab 3: Edit Products
     with tabs[2]:
-        st.subheader("Edit Products")
+        st.subheader("แก้ไขสินค้า")
         products = get_all_products()
         
         if products:
@@ -170,16 +170,16 @@ elif page == "Products":
             if st.button("💾 Save Changes", key="save_products"):
                 try:
                     bulk_update_products(edited_df.to_dict('records'))
-                    st.success("✅ Products updated successfully!")
+                    st.success("✅ แก้ไขสินค้าสำเร็จ")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error updating products: {str(e)}")
+                    st.error(f"เกิดข้อผิดพลาดขณะบันทึก: {str(e)}")
         else:
             st.info("No products to edit.")
     
     # Tab 4: Delete Product
     with tabs[3]:
-        st.subheader("Delete Product")
+        st.subheader("ลบสินค้า")
         products = get_all_products()
         
         if products:
@@ -193,14 +193,14 @@ elif page == "Products":
                 return f"{option_code} - {name}" if name else str(option_code)
 
             product_to_delete = st.selectbox(
-                "Select Product to Delete",
+                "เลือกรหัสที่ต้องการลบ",
                 df["Code"].tolist(),
                 format_func=_format_product
             )
             
-            if st.button("🗑️ Delete Product", key="delete_product"):
+            if st.button("🗑️ ลบสินค้า", key="delete_product"):
                 delete_product(product_to_delete)
-                st.success("✅ Product deleted successfully!")
+                st.success("✅ ลบสินค้าสำเร็จ")
                 st.rerun()
         else:
             st.info("No products to delete.")
@@ -209,14 +209,14 @@ elif page == "Products":
 # ============================================================================
 # DELIVERY ROUNDS PAGE
 # ============================================================================
-elif page == "Delivery Rounds":
-    st.header("Delivery Rounds Management")
+elif page == "รอบการรับ":
+    st.header("จัดการรอบการรับ")
     
-    tabs = st.tabs(["View Rounds", "Add Round", "Delete Round"])
+    tabs = st.tabs(["ดูรอบ", "เพิ่มรอบ", "ลบรอบ"])
     
     # Tab 1: View Delivery Rounds
     with tabs[0]:
-        st.subheader("All Delivery Rounds")
+        st.subheader("รอบการรับทั้งหมด")
         rounds = get_all_delivery_rounds()
         
         if rounds:
@@ -227,24 +227,24 @@ elif page == "Delivery Rounds":
     
     # Tab 2: Add Delivery Round
     with tabs[1]:
-        st.subheader("Add New Delivery Round")
+        st.subheader("เพิ่มรอบการรับใหม่")
         col1, col2 = st.columns(2)
         
         with col1:
-            round_name = st.text_input("Round Name (e.g., 'Round 1')")
-            round_date = st.date_input("Date")
+            round_name = st.text_input("ชื่อรอบ (เช่น รอบที่ 1)")
+            round_date = st.date_input("วันที่ (วด/ดด/ปปปป)")
         
         if st.button("➕ Add Round", key="add_round"):
             if round_name:
                 add_delivery_round(round_name, str(round_date))
-                st.success(f"✅ Delivery round '{round_name}' added successfully!")
+                st.success(f"✅ เพิ่มรอบ '{round_name}' เรียบร้อยแล้ว")
                 st.rerun()
             else:
-                st.error("Please fill in the round name.")
+                st.error("กรุณากรอกชื่อรอบ")
     
     # Tab 3: Delete Delivery Round
     with tabs[2]:
-        st.subheader("Delete Delivery Round")
+        st.subheader("ลบรอบการรับ")
         rounds = get_all_delivery_rounds()
         
         if rounds:
@@ -266,9 +266,9 @@ elif page == "Delivery Rounds":
                 format_func=_format_round
             )
             
-            if st.button("🗑️ Delete Round", key="delete_round"):
+            if st.button("🗑️ ลบรอบ", key="delete_round"):
                 delete_delivery_round(round_to_delete)
-                st.success("✅ Delivery round deleted successfully!")
+                st.success("✅ ลบรอบเรียบร้อย")
                 st.rerun()
         else:
             st.info("No delivery rounds to delete.")
@@ -277,10 +277,10 @@ elif page == "Delivery Rounds":
 # ============================================================================
 # INVENTORY BY ROUND PAGE
 # ============================================================================
-elif page == "Inventory by Round":
-    st.header("Inventory by Delivery Round")
+elif page == "สินค้าตามรอบ":
+    st.header("สินค้าตามรอบการรับ")
     
-    tabs = st.tabs(["View Inventory", "Edit Inventory"])
+    tabs = st.tabs(["ดูสินค้าตามรอบ", "แก้ไขสินค้าตามรอบ"])
     
     # Tab 1: View Inventory
     with tabs[0]:
@@ -292,7 +292,7 @@ elif page == "Inventory by Round":
         if rounds and products:
             # Create a view with inventory for each round
             round_names = [r["round_name"] for r in rounds]
-            selected_round = st.selectbox("Select Round", round_names)
+            selected_round = st.selectbox("เลือกรอบ", round_names)
             
             # Get the round ID
             round_id = next((r["id"] for r in rounds if r["round_name"] == selected_round), None)
@@ -303,7 +303,7 @@ elif page == "Inventory by Round":
                     df = pd.DataFrame(inventory)
                     st.dataframe(df, use_container_width=True, hide_index=True)
                 else:
-                    st.info("No inventory data for this round.")
+                    st.info("ยังไม่มีข้อมูลสินค้าในรอบนี้")
         else:
             st.info("Please add products and delivery rounds first.")
     
@@ -333,13 +333,13 @@ elif page == "Inventory by Round":
                         key="inventory_editor"
                     )
                     
-                    if st.button("💾 Save Inventory Changes", key="save_inventory"):
+                    if st.button("💾 บันทึกการแก้ไข", key="save_inventory"):
                         try:
                             bulk_update_inventory_by_round(edited_df.to_dict('records'))
-                            st.success("✅ Inventory updated successfully!")
+                            st.success("✅ บันทึกข้อมูลสำเร็จ")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error updating inventory: {str(e)}")
+                            st.error(f"เกิดข้อผิดพลาด: {str(e)}")
                 else:
                     st.info("No inventory data for this round.")
         else:
@@ -349,14 +349,14 @@ elif page == "Inventory by Round":
 # ============================================================================
 # SHOP MANAGEMENT PAGE
 # ============================================================================
-elif page == "Shop Management":
-    st.header("Shop Management")
+elif page == "จัดการร้าน":
+    st.header("จัดการร้านค้า")
     
-    tabs = st.tabs(["View Shops", "Add Shop", "Edit Shop", "Delete Shop"])
+    tabs = st.tabs(["ดูร้าน", "เพิ่มร้าน", "แก้ไขร้าน", "ลบร้าน"])
     
     # Tab 1: View Shops
     with tabs[0]:
-        st.subheader("All Shops")
+        st.subheader("ร้านค้าทั้งหมด")
         shops = get_all_shops()
         
         if shops:
@@ -371,16 +371,16 @@ elif page == "Shop Management":
         col1, col2 = st.columns(2)
         
         with col1:
-            shop_code = st.text_input("Shop Code")
-            shop_name = st.text_input("Shop Name")
+            shop_code = st.text_input("รหัสร้าน")
+            shop_name = st.text_input("ชื่อร้าน")
         
-        if st.button("➕ Add Shop", key="add_shop"):
+        if st.button("➕ เพิ่มร้าน", key="add_shop"):
             if shop_code and shop_name:
                 add_shop(shop_code, shop_name)
-                st.success(f"✅ Shop '{shop_name}' added successfully!")
+                st.success(f"✅ เพิ่มร้าน '{shop_name}' เรียบร้อยแล้ว")
                 st.rerun()
             else:
-                st.error("Please fill in all fields.")
+                st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
     
     # Tab 3: Edit Shop
     with tabs[2]:
@@ -410,12 +410,12 @@ elif page == "Shop Management":
             
             col1, col2 = st.columns(2)
             with col1:
-                new_code = st.text_input("Shop Code", value=shop_data["shop_code"])
-                new_name = st.text_input("Shop Name", value=shop_data["shop_name"])
+                new_code = st.text_input("รหัสร้าน", value=shop_data["shop_code"])
+                new_name = st.text_input("ชื่อร้าน", value=shop_data["shop_name"])
             
-            if st.button("💾 Update Shop", key="update_shop"):
+            if st.button("💾 บันทึกการแก้ไข", key="update_shop"):
                 update_shop(shop_to_edit, new_code, new_name)
-                st.success("✅ Shop updated successfully!")
+                st.success("✅ แก้ไขร้านเรียบร้อย")
                 st.rerun()
         else:
             st.info("No shops to edit.")
@@ -445,9 +445,9 @@ elif page == "Shop Management":
                 key="delete_shop_select"
             )
             
-            if st.button("🗑️ Delete Shop", key="delete_shop"):
+            if st.button("🗑️ ลบร้าน", key="delete_shop"):
                 delete_shop(shop_to_delete)
-                st.success("✅ Shop deleted successfully!")
+                st.success("✅ ลบร้านเรียบร้อย")
                 st.rerun()
         else:
             st.info("No shops to delete.")
@@ -456,10 +456,10 @@ elif page == "Shop Management":
 # ============================================================================
 # SHOP DISTRIBUTION PAGE
 # ============================================================================
-elif page == "Shop Distribution":
-    st.header("Shop Distribution Management")
+elif page == "การแจกจ่ายร้าน":
+    st.header("การแจกจ่ายสินค้าร้านค้า")
     
-    tabs = st.tabs(["View Distribution", "Edit Distribution"])
+    tabs = st.tabs(["ดูการแจกจ่าย", "แก้ไขการแจกจ่าย"])
     
     # Tab 1: View Distribution
     with tabs[0]:
@@ -469,7 +469,7 @@ elif page == "Shop Distribution":
         
         if rounds:
             round_names = [r["round_name"] for r in rounds]
-            selected_round = st.selectbox("Select Round", round_names)
+            selected_round = st.selectbox("เลือกรอบ", round_names)
             
             # Get the round ID
             round_id = next((r["id"] for r in rounds if r["round_name"] == selected_round), None)
@@ -480,7 +480,7 @@ elif page == "Shop Distribution":
                     df = pd.DataFrame(distribution)
                     st.dataframe(df, use_container_width=True, hide_index=True)
                 else:
-                    st.info("No distribution data for this round.")
+                    st.info("ยังไม่มีข้อมูลการแจกจ่ายในรอบนี้")
         else:
             st.info("Please add delivery rounds first.")
     
@@ -509,13 +509,13 @@ elif page == "Shop Distribution":
                         key="distribution_editor"
                     )
                     
-                    if st.button("💾 Save Distribution Changes", key="save_distribution"):
+                    if st.button("💾 บันทึกการแจกจ่าย", key="save_distribution"):
                         try:
                             bulk_update_shop_distribution(edited_df.to_dict('records'))
-                            st.success("✅ Distribution updated successfully!")
+                            st.success("✅ บันทึกการแจกจ่ายเรียบร้อย")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error updating distribution: {str(e)}")
+                            st.error(f"เกิดข้อผิดพลาด: {str(e)}")
                 else:
                     st.info("No distribution data for this round.")
         else:
@@ -526,7 +526,7 @@ elif page == "Shop Distribution":
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray; font-size: 12px;'>"
-    "📦 Inventory Management System | Built with Streamlit"
+    "📦 ระบบจัดการคลังสินค้า | สร้างด้วย Streamlit"
     "</div>",
     unsafe_allow_html=True
 )
