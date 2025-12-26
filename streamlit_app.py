@@ -72,7 +72,7 @@ st.title("📦 Inventory Manager")
 st.markdown("---")
 
 # Sidebar Navigation
-    page = st.sidebar.radio(
+page = st.sidebar.radio(
     "📋 เมนู",
     ["แดชบอร์ด", "สินค้า", "รอบการรับ", "สินค้าตามรอบ", "จัดการร้าน", "การแจกจ่ายร้าน"]
 )
@@ -335,7 +335,7 @@ elif page == "สินค้าตามรอบ":
                     
                     if st.button("💾 บันทึกการแก้ไข", key="save_inventory"):
                         try:
-                            bulk_update_inventory_by_round(edited_df.to_dict('records'))
+                            bulk_update_inventory_by_round(round_id, edited_df.to_dict('records'))
                             st.success("✅ บันทึกข้อมูลสำเร็จ")
                             st.rerun()
                         except Exception as e:
@@ -511,7 +511,7 @@ elif page == "การแจกจ่ายร้าน":
                     
                     if st.button("💾 บันทึกการแจกจ่าย", key="save_distribution"):
                         try:
-                            bulk_update_shop_distribution(edited_df.to_dict('records'))
+                            bulk_update_shop_distribution(round_id, edited_df.to_dict('records'))
                             st.success("✅ บันทึกการแจกจ่ายเรียบร้อย")
                             st.rerun()
                         except Exception as e:
