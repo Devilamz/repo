@@ -8,13 +8,8 @@ This is the main entry point for deployment.
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import sys
-import os
 
-# Add the de directory to the path so we can import database
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'de'))
-
-from database import (
+from de.database import (
     init_db, add_product, get_all_products, 
     bulk_update_products, delete_product,
     # Delivery rounds functions
