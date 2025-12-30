@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv
+venv/
+
+# SQLite DB
+de/inventory.db
+
+# Streamlit runtime
+.streamlit/
+
+# Test caches
+.pytest_cache/
+
+# System files
+.DS_Store
+
+# Static uploads
+static/images/

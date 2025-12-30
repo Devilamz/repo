@@ -38,6 +38,19 @@ def init_db():
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Create customers table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS customers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    customer_code TEXT UNIQUE NOT NULL,
+                    customer_name TEXT NOT NULL,
+                    address TEXT,
+                    phone TEXT,
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             
             # Create products table
             cursor.execute("""
@@ -55,7 +68,10 @@ def init_db():
                     Shop_6 INTEGER DEFAULT 0,
                     Small_Units_Per_Big INTEGER DEFAULT 1,
                     Cost_Price_Small REAL DEFAULT 0.0,
-                    Sell_Price_Small REAL DEFAULT 0.0
+                    Sell_Price_Small REAL DEFAULT 0.0,
+                    -- New fields for product images and notes
+                    Image_Path TEXT,
+                    Notes TEXT
                 )
             """)
             
@@ -105,7 +121,87 @@ def init_db():
                 )
             """)
             
+            # Create orders and order items for customer orders per round
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_code TEXT UNIQUE,
+                    round_id INTEGER,
+                    shop_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'draft',
+                    notes TEXT,
+                    FOREIGN KEY (round_id) REFERENCES delivery_rounds(id),
+                    FOREIGN KEY (shop_id) REFERENCES shops(id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS order_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER NOT NULL,
+                    product_code TEXT NOT NULL,
+                    quantity INTEGER DEFAULT 0,
+                    price_per_small REAL DEFAULT 0.0,
+                    FOREIGN KEY (order_id) REFERENCES orders(id),
+                    FOREIGN KEY (product_code) REFERENCES products(Code)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS receipts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    round_id INTEGER NOT NULL,
+                    receive_number INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notes TEXT,
+                    FOREIGN KEY (round_id) REFERENCES delivery_rounds(id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS receipt_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    receipt_id INTEGER NOT NULL,
+                    product_code TEXT NOT NULL,
+                    quantity INTEGER DEFAULT 0,
+                    FOREIGN KEY (receipt_id) REFERENCES receipts(id),
+                    FOREIGN KEY (product_code) REFERENCES products(Code)
+                )
+            """)
+
             conn.commit()
+            # Ensure backward compatible schema updates for existing databases
+            try:
+                # Ensure product columns
+                cursor.execute("PRAGMA table_info(products)")
+                existing_cols = [r[1] for r in cursor.fetchall()]
+                if "Image_Path" not in existing_cols:
+                    cursor.execute("ALTER TABLE products ADD COLUMN Image_Path TEXT")
+                if "Notes" not in existing_cols:
+                    cursor.execute("ALTER TABLE products ADD COLUMN Notes TEXT")
+
+                # Ensure shops have address and phone
+                cursor.execute("PRAGMA table_info(shops)")
+                shop_cols = [r[1] for r in cursor.fetchall()]
+                if "address" not in shop_cols:
+                    cursor.execute("ALTER TABLE shops ADD COLUMN address TEXT")
+                if "phone" not in shop_cols:
+                    cursor.execute("ALTER TABLE shops ADD COLUMN phone TEXT")
+
+                # Ensure customers table has expected columns if it existed without them
+                cursor.execute("PRAGMA table_info(customers)")
+                cust_cols = [r[1] for r in cursor.fetchall()]
+                if cust_cols and "address" not in cust_cols:
+                    cursor.execute("ALTER TABLE customers ADD COLUMN address TEXT")
+                if cust_cols and "phone" not in cust_cols:
+                    cursor.execute("ALTER TABLE customers ADD COLUMN phone TEXT")
+
+                conn.commit()
+            except Exception:
+                # If PRAGMA or ALTER fails for any reason, continue silently
+                pass
+
             print("✅ Database initialized successfully!")
             return True
     except sqlite3.Error as e:
@@ -118,7 +214,9 @@ def add_product(
     product_name: str,
     small_units_per_big: int = 1,
     cost_price_small: float = 0.0,
-    sell_price_small: float = 0.0
+    sell_price_small: float = 0.0,
+    image_path: str = None,
+    notes: str = None
 ) -> bool:
     """
     Add a new product to the database.
@@ -129,6 +227,8 @@ def add_product(
         small_units_per_big: Conversion rate (big to small units)
         cost_price_small: Cost per small unit
         sell_price_small: Selling price per small unit
+        image_path: Optional path to product image
+        notes: Optional product notes
     
     Returns:
         True if successful, False otherwise
@@ -139,10 +239,10 @@ def add_product(
             cursor.execute("""
                 INSERT INTO products (
                     Code, Product_Name, Small_Units_Per_Big, 
-                    Cost_Price_Small, Sell_Price_Small
+                    Cost_Price_Small, Sell_Price_Small, Image_Path, Notes
                 )
-                VALUES (?, ?, ?, ?, ?)
-            """, (code, product_name, small_units_per_big, cost_price_small, sell_price_small))
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (code, product_name, small_units_per_big, cost_price_small, sell_price_small, image_path, notes))
             conn.commit()
             print(f"✅ Product '{product_name}' added successfully!")
             return True
@@ -221,7 +321,9 @@ def get_all_products() -> List[Dict]:
                     "Shop_6": row["Shop_6"],
                     "Small_Units_Per_Big": row["Small_Units_Per_Big"],
                     "Cost_Price_Small": row["Cost_Price_Small"],
-                    "Sell_Price_Small": row["Sell_Price_Small"]
+                    "Sell_Price_Small": row["Sell_Price_Small"],
+                    "Image_Path": row["Image_Path"] if "Image_Path" in row.keys() else None,
+                    "Notes": row["Notes"] if "Notes" in row.keys() else None
                 })
             return products
     except sqlite3.Error as e:
@@ -649,15 +751,367 @@ def bulk_update_shop_distribution(round_id: int, distribution_data: List[Dict]) 
         return False
 
 
+# ==================== ORDER AGGREGATION HELPERS ====================
+
+def get_order_summary_by_round(round_id: int) -> List[Dict]:
+    """Return aggregated ordered quantities per product per shop for a specific round.
+
+    Returns a list of dicts: {
+        'product_code': ..., 'Product_Name': ..., 'total_ordered': ..., 'shop_{shop_id}': qty, ...
+    }
+    """
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            # Get list of relevant shops
+            cursor.execute("SELECT id, shop_code, shop_name FROM shops WHERE is_active = 1 ORDER BY shop_code")
+            shops = cursor.fetchall()
+            shop_ids = [s['id'] for s in shops]
+
+            # Aggregate orders
+            cursor.execute("""
+                SELECT oi.product_code, o.shop_id, SUM(oi.quantity) as qty
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                WHERE o.round_id = ?
+                GROUP BY oi.product_code, o.shop_id
+            """, (round_id,))
+            rows = cursor.fetchall()
+
+            # Build map
+            summary_map = {}
+            for row in rows:
+                pc = row['product_code']
+                shop_id = row['shop_id']
+                qty = row['qty'] or 0
+                if pc not in summary_map:
+                    # fetch product name
+                    cursor.execute("SELECT Product_Name FROM products WHERE Code = ?", (pc,))
+                    pr = cursor.fetchone()
+                    summary_map[pc] = {
+                        'product_code': pc,
+                        'Product_Name': pr['Product_Name'] if pr else '',
+                        'total_ordered': 0
+                    }
+                    for sid in shop_ids:
+                        summary_map[pc][f'shop_{sid}'] = 0
+
+                summary_map[pc][f'shop_{shop_id}'] = qty
+                summary_map[pc]['total_ordered'] += qty
+
+            return list(summary_map.values())
+    except sqlite3.Error as e:
+        print(f"❌ Error aggregating orders: {e}")
+        return []
+
+
+def get_shop_allocations_by_round(round_id: int) -> List[Dict]:
+    """Return allocation per shop for a round based on shop_distribution.
+
+    Returns list of dicts: {'shop_id','shop_code','shop_name','items': [{'product_code','product_name','quantity'}...]}
+    """
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, shop_code, shop_name FROM shops WHERE is_active = 1 ORDER BY shop_code")
+            shops = cursor.fetchall()
+            result = []
+            for s in shops:
+                sid = s['id']
+                cursor.execute("""
+                    SELECT sd.product_code, SUM(sd.quantity) as quantity, p.Product_Name
+                    FROM shop_distribution sd
+                    LEFT JOIN products p ON sd.product_code = p.Code
+                    WHERE sd.round_id = ? AND sd.shop_id = ? AND sd.quantity > 0
+                    GROUP BY sd.product_code
+                """, (round_id, sid))
+                rows = cursor.fetchall()
+                items = []
+                for r in rows:
+                    items.append({
+                        'product_code': r['product_code'],
+                        'product_name': r['Product_Name'],
+                        'quantity': r['quantity']
+                    })
+                if items:
+                    result.append({
+                        'shop_id': sid,
+                        'shop_code': s['shop_code'],
+                        'shop_name': s['shop_name'],
+                        'items': items
+                    })
+            return result
+    except sqlite3.Error as e:
+        print(f"❌ Error getting shop allocations: {e}")
+        return []
+
+
+# ==================== ORDER FUNCTIONS ====================
+
+def create_order(round_id: int, shop_id: int, order_code: str = None, notes: str = None) -> Optional[int]:
+    """Create an order master record and return its ID."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO orders (order_code, round_id, shop_id, notes)
+                VALUES (?, ?, ?, ?)
+            """, (order_code, round_id, shop_id, notes))
+            conn.commit()
+            return cursor.lastrowid
+    except sqlite3.Error as e:
+        print(f"❌ Error creating order: {e}")
+        return None
+
+
+def add_order_item(order_id: int, product_code: str, quantity: int, price_per_small: float = 0.0) -> bool:
+    """Add an item to an order."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO order_items (order_id, product_code, quantity, price_per_small)
+                VALUES (?, ?, ?, ?)
+            """, (order_id, product_code, quantity, price_per_small))
+            conn.commit()
+            return True
+    except sqlite3.Error as e:
+        print(f"❌ Error adding order item: {e}")
+        return False
+
+
+def get_orders_by_round(round_id: int) -> List[Dict]:
+    """Get all orders for a specific round with basic shop info."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT o.*, s.shop_code, s.shop_name
+                FROM orders o
+                LEFT JOIN shops s ON o.shop_id = s.id
+                WHERE o.round_id = ?
+                ORDER BY o.id DESC
+            """, (round_id,))
+            rows = cursor.fetchall()
+            orders = []
+            for row in rows:
+                orders.append({
+                    "id": row["id"],
+                    "order_code": row["order_code"],
+                    "round_id": row["round_id"],
+                    "shop_id": row["shop_id"],
+                    "shop_code": row["shop_code"] if "shop_code" in row.keys() else None,
+                    "shop_name": row["shop_name"] if "shop_name" in row.keys() else None,
+                    "created_at": row["created_at"] if "created_at" in row.keys() else None,
+                    "status": row["status"] if "status" in row.keys() else None,
+                    "notes": row["notes"] if "notes" in row.keys() else None
+                })
+            return orders
+    except sqlite3.Error as e:
+        print(f"❌ Error retrieving orders: {e}")
+        return []
+
+
+def get_order_items(order_id: int) -> List[Dict]:
+    """Get items for a specific order."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT oi.*, p.Product_Name
+                FROM order_items oi
+                LEFT JOIN products p ON oi.product_code = p.Code
+                WHERE oi.order_id = ?
+            """, (order_id,))
+            rows = cursor.fetchall()
+            items = []
+            for row in rows:
+                items.append({
+                    "id": row["id"],
+                    "product_code": row["product_code"],
+                    "product_name": row.get("Product_Name"),
+                    "quantity": row["quantity"],
+                    "price_per_small": row.get("price_per_small")
+                })
+            return items
+    except sqlite3.Error as e:
+        print(f"❌ Error retrieving order items: {e}")
+        return []
+
+
+def get_round_financials(round_id: int) -> Dict:
+    """Calculate total cost, revenue and profit for a delivery round based on actual distributed quantities."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT sd.product_code, SUM(sd.quantity) as total_qty, p.Cost_Price_Small, p.Sell_Price_Small
+                FROM shop_distribution sd
+                JOIN products p ON sd.product_code = p.Code
+                WHERE sd.round_id = ?
+                GROUP BY sd.product_code
+            """, (round_id,))
+            rows = cursor.fetchall()
+
+            total_cost = 0.0
+            total_revenue = 0.0
+            details = []
+            for row in rows:
+                qty = row["total_qty"]
+                cost = (row["Cost_Price_Small"] or 0.0) * qty
+                rev = (row["Sell_Price_Small"] or 0.0) * qty
+                total_cost += cost
+                total_revenue += rev
+                details.append({
+                    "product_code": row["product_code"],
+                    "quantity": qty,
+                    "cost": cost,
+                    "revenue": rev,
+                    "profit": rev - cost
+                })
+
+            return {
+                "round_id": round_id,
+                "total_cost": total_cost,
+                "total_revenue": total_revenue,
+                "total_profit": total_revenue - total_cost,
+                "details": details
+            }
+    except sqlite3.Error as e:
+        print(f"❌ Error calculating financials: {e}")
+        return {"round_id": round_id, "total_cost": 0.0, "total_revenue": 0.0, "total_profit": 0.0, "details": []}
+
+
+# ==================== RECEIPT / RECEIVE GOODS FUNCTIONS ====================
+
+def create_receipt(round_id: int, receive_number: int = None, notes: str = None) -> Optional[int]:
+    """Create a receipt (a receiving session) for a round and return its ID."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            if receive_number is None:
+                cursor.execute("SELECT MAX(receive_number) as mx FROM receipts WHERE round_id = ?", (round_id,))
+                row = cursor.fetchone()
+                receive_number = (row["mx"] or 0) + 1
+            cursor.execute("""
+                INSERT INTO receipts (round_id, receive_number, notes)
+                VALUES (?, ?, ?)
+            """, (round_id, receive_number, notes))
+            conn.commit()
+            return cursor.lastrowid
+    except sqlite3.Error as e:
+        print(f"❌ Error creating receipt: {e}")
+        return None
+
+
+def add_receipt_item(receipt_id: int, product_code: str, quantity: int) -> bool:
+    """Add an item to a receipt and update inventory totals for its round."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO receipt_items (receipt_id, product_code, quantity)
+                VALUES (?, ?, ?)
+            """, (receipt_id, product_code, quantity))
+            conn.commit()
+
+            # Get round_id for this receipt
+            cursor.execute("SELECT round_id FROM receipts WHERE id = ?", (receipt_id,))
+            row = cursor.fetchone()
+            if row:
+                round_id = row["round_id"]
+                _recalculate_inventory_for_product(round_id, product_code)
+            return True
+    except sqlite3.Error as e:
+        print(f"❌ Error adding receipt item: {e}")
+        return False
+
+
+def _recalculate_inventory_for_product(round_id: int, product_code: str) -> None:
+    """Recalculate the total received quantity for a product in a round from receipts and update inventory_by_round."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT SUM(ri.quantity) as total_received
+                FROM receipt_items ri
+                JOIN receipts r ON ri.receipt_id = r.id
+                WHERE r.round_id = ? AND ri.product_code = ?
+            """, (round_id, product_code))
+            row = cursor.fetchone()
+            total_received = row["total_received"] or 0
+
+            # Check if inventory_by_round exists
+            cursor.execute("SELECT id FROM inventory_by_round WHERE product_code = ? AND round_id = ?", (product_code, round_id))
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute("UPDATE inventory_by_round SET quantity_received = ? WHERE product_code = ? AND round_id = ?", (total_received, product_code, round_id))
+            else:
+                cursor.execute("INSERT INTO inventory_by_round (product_code, round_id, quantity_received) VALUES (?, ?, ?)", (product_code, round_id, total_received))
+            conn.commit()
+    except Exception as e:
+        print(f"❌ Error recalculating inventory totals: {e}")
+
+
+def get_receipts_by_round(round_id: int) -> List[Dict]:
+    """Return receipts for a round."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM receipts WHERE round_id = ? ORDER BY receive_number", (round_id,))
+            rows = cursor.fetchall()
+            receipts = []
+            for row in rows:
+                receipts.append({
+                    "id": row["id"],
+                    "round_id": row["round_id"],
+                    "receive_number": row["receive_number"],
+                    "created_at": row["created_at"],
+                    "notes": row["notes"]
+                })
+            return receipts
+    except sqlite3.Error as e:
+        print(f"❌ Error retrieving receipts: {e}")
+        return []
+
+
+def get_receipt_items(receipt_id: int) -> List[Dict]:
+    """Return items for a receipt."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ri.*, p.Product_Name
+                FROM receipt_items ri
+                LEFT JOIN products p ON ri.product_code = p.Code
+                WHERE ri.receipt_id = ?
+            """, (receipt_id,))
+            rows = cursor.fetchall()
+            items = []
+            for row in rows:
+                items.append({
+                    "id": row["id"],
+                    "product_code": row["product_code"],
+                    "product_name": row["Product_Name"] if "Product_Name" in row.keys() else None,
+                    "quantity": row["quantity"]
+                })
+            return items
+    except sqlite3.Error as e:
+        print(f"❌ Error retrieving receipt items: {e}")
+        return []
+
+
 # ==================== SHOP MANAGEMENT FUNCTIONS ====================
 
-def add_shop(shop_code: str, shop_name: str) -> bool:
+def add_shop(shop_code: str, shop_name: str, address: str = None, phone: str = None) -> bool:
     """
     Add a new shop to the database.
     
     Args:
         shop_code: Shop code (unique identifier)
         shop_name: Shop name
+        address: Optional address
+        phone: Optional phone number
     
     Returns:
         True if successful, False otherwise
@@ -666,9 +1120,9 @@ def add_shop(shop_code: str, shop_name: str) -> bool:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO shops (shop_code, shop_name)
-                VALUES (?, ?)
-            """, (shop_code, shop_name))
+                INSERT INTO shops (shop_code, shop_name, address, phone)
+                VALUES (?, ?, ?, ?)
+            """, (shop_code, shop_name, address, phone))
             conn.commit()
             print(f"✅ Shop '{shop_name}' added successfully!")
             return True
@@ -705,6 +1159,8 @@ def get_all_shops(active_only: bool = True) -> List[Dict]:
                     "id": row["id"],
                     "shop_code": row["shop_code"],
                     "shop_name": row["shop_name"],
+                    "address": row["address"] if "address" in row.keys() else None,
+                    "phone": row["phone"] if "phone" in row.keys() else None,
                     "is_active": row["is_active"]
                 })
             return shops
@@ -713,7 +1169,107 @@ def get_all_shops(active_only: bool = True) -> List[Dict]:
         return []
 
 
-def update_shop(shop_id: int, shop_code: str = None, shop_name: str = None, is_active: int = None) -> bool:
+# ==================== CUSTOMER MANAGEMENT ====================
+
+def add_customer(customer_code: str, customer_name: str, address: str = None, phone: str = None) -> bool:
+    """Add new customer"""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO customers (customer_code, customer_name, address, phone)
+                VALUES (?, ?, ?, ?)
+            """, (customer_code, customer_name, address, phone))
+            conn.commit()
+            print(f"✅ Customer '{customer_name}' added successfully!")
+            return True
+    except sqlite3.IntegrityError:
+        print(f"❌ Customer with code '{customer_code}' already exists!")
+        return False
+    except sqlite3.Error as e:
+        print(f"❌ Error adding customer: {e}")
+        return False
+
+
+def get_all_customers(active_only: bool = True) -> List[Dict]:
+    """Retrieve all customers"""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            if active_only:
+                cursor.execute("SELECT * FROM customers WHERE is_active = 1 ORDER BY customer_code")
+            else:
+                cursor.execute("SELECT * FROM customers ORDER BY customer_code")
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                result.append({
+                    'id': row['id'],
+                    'customer_code': row['customer_code'],
+                    'customer_name': row['customer_name'],
+                    'address': row['address'] if 'address' in row.keys() else None,
+                    'phone': row['phone'] if 'phone' in row.keys() else None,
+                    'is_active': row['is_active']
+                })
+            return result
+    except sqlite3.Error as e:
+        print(f"❌ Error retrieving customers: {e}")
+        return []
+
+
+def update_customer(customer_id: int, customer_code: str = None, customer_name: str = None, address: str = None, phone: str = None, is_active: int = None) -> bool:
+    """Update customer info"""
+    try:
+        updates = {}
+        if customer_code is not None:
+            updates['customer_code'] = customer_code
+        if customer_name is not None:
+            updates['customer_name'] = customer_name
+        if address is not None:
+            updates['address'] = address
+        if phone is not None:
+            updates['phone'] = phone
+        if is_active is not None:
+            updates['is_active'] = is_active
+        if not updates:
+            return False
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+            values = list(updates.values()) + [customer_id]
+            query = f"UPDATE customers SET {set_clause} WHERE id = ?"
+            cursor.execute(query, values)
+            conn.commit()
+            if cursor.rowcount > 0:
+                print("✅ Customer updated successfully!")
+                return True
+            else:
+                print("⚠️ Customer not found!")
+                return False
+    except sqlite3.Error as e:
+        print(f"❌ Error updating customer: {e}")
+        return False
+
+
+def delete_customer(customer_id: int) -> bool:
+    """Soft delete customer (set is_active=0)"""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE customers SET is_active = 0 WHERE id = ?", (customer_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                print("✅ Customer deleted successfully!")
+                return True
+            else:
+                print("⚠️ Customer not found!")
+                return False
+    except sqlite3.Error as e:
+        print(f"❌ Error deleting customer: {e}")
+        return False
+
+
+def update_shop(shop_id: int, shop_code: str = None, shop_name: str = None, address: str = None, phone: str = None, is_active: int = None) -> bool:
     """
     Update shop information.
     
@@ -721,6 +1277,8 @@ def update_shop(shop_id: int, shop_code: str = None, shop_name: str = None, is_a
         shop_id: Shop ID to update
         shop_code: New shop code (optional)
         shop_name: New shop name (optional)
+        address: New address (optional)
+        phone: New phone (optional)
         is_active: Active status (optional)
     
     Returns:
@@ -732,6 +1290,10 @@ def update_shop(shop_id: int, shop_code: str = None, shop_name: str = None, is_a
             updates["shop_code"] = shop_code
         if shop_name is not None:
             updates["shop_name"] = shop_name
+        if address is not None:
+            updates["address"] = address
+        if phone is not None:
+            updates["phone"] = phone
         if is_active is not None:
             updates["is_active"] = is_active
         
