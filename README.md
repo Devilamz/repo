@@ -43,3 +43,27 @@ pip install weasyprint
 ```
 
 If `weasyprint` is not available the app will still provide HTML/CSV downloads and show a short instruction to enable PDF export.
+
+## Docker (optional)
+
+To run locally via Docker:
+
+Build (without WeasyPrint):
+
+```bash
+docker build -t inventory-app:latest .
+docker run --rm -p 8501:8501 inventory-app:latest
+```
+
+To build with WeasyPrint support (system deps are included in the image build):
+
+```bash
+docker build --build-arg INSTALL_WEASYPRINT=true -t inventory-app:with-weasyprint .
+docker run --rm -p 8501:8501 inventory-app:with-weasyprint
+```
+
+Or use docker-compose:
+
+```bash
+docker-compose up --build
+```

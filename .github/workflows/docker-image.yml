@@ -1,0 +1,37 @@
+name: Build Docker Image & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build image
+      run: |
+        docker build --progress=plain --tag ${GITHUB_REPOSITORY}:ci .
+
+    - name: Run tests inside image
+      run: |
+        docker run --rm ${GITHUB_REPOSITORY}:ci /bin/sh -c "python -m pip install pytest && pytest -q"
+
+    - name: (optional) Push image
+      if: false
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ghcr.io/${{ github.repository }}:latest
